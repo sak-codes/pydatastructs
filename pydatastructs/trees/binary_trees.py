@@ -7,6 +7,7 @@ from pydatastructs.linear_data_structures.arrays import ArrayForTrees
 from pydatastructs.utils.misc_util import (
     Backend, raise_if_backend_is_not_python)
 
+
 __all__ = [
     'AVLTree',
     'BinaryTree',
