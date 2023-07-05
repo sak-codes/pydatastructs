@@ -22,7 +22,8 @@ __all__ = [
     'shortest_paths',
     'all_pair_shortest_paths',
     'topological_sort',
-    'topological_sort_parallel'
+    'topological_sort_parallel',
+    'max_flow'
 ]
 
 Stack = Queue = deque
@@ -1064,3 +1065,100 @@ def _kahn_adjacency_list_parallel(graph: Graph, num_threads: int) -> list:
     if len(L) != num_vertices:
         raise ValueError("Graph is not acyclic.")
     return L
+
+
+def _breadth_first_search_max_flow(graph: Graph, source_node, sink_node, flow_passed, for_dinic=False):
+    bfs_queue = Queue()
+    parent, currentPathC = {}, {}
+    currentPathC[source_node] = float('inf')
+    bfs_queue.append(source_node)
+    while len(bfs_queue) != 0:
+        curr_node = bfs_queue.popleft()
+        next_nodes = graph.neighbors(curr_node)
+        if len(next_nodes) != 0:
+            for next_node in next_nodes:
+                capacity = graph.get_edge(curr_node, next_node.name).value
+                fp = flow_passed.get((curr_node, next_node.name), 0)
+                if capacity and parent.get(next_node.name, False) is False and capacity - fp > 0:
+                    parent[next_node.name] = curr_node
+                    next_flow = min(currentPathC[curr_node], capacity - fp)
+                    currentPathC[next_node.name] = next_flow
+                    if next_node.name == sink_node and not for_dinic:
+                        return (next_flow, parent)
+                    bfs_queue.append(next_node.name)
+    return (0, parent)
+
+
+def _max_flow_edmonds_karp_(graph: Graph, source, sink):
+    m_flow = 0
+    flow_passed = {}
+    new_flow, parent = _breadth_first_search_max_flow(graph, source, sink, flow_passed)
+    while new_flow != 0:
+        m_flow += new_flow
+        current = sink
+        while current != source:
+            prev = parent[current]
+            fp = flow_passed.get((prev, current), 0)
+            flow_passed[(prev, current)] = fp + new_flow
+            fp = flow_passed.get((current, prev), 0)
+            flow_passed[(current, prev)] = fp - new_flow
+            current = prev
+        new_flow, parent = _breadth_first_search_max_flow(graph, source, sink, flow_passed)
+    return m_flow
+
+
+def _depth_first_search_max_flow_dinic(graph: Graph, u, parent, sink_node, flow, flow_passed):
+    if u == sink_node:
+        return flow
+
+    next_nodes = graph.neighbors(u)
+    if len(next_nodes) != 0:
+        for next_node in next_nodes:
+            capacity = graph.get_edge(u, next_node.name).value
+            fp = flow_passed.get((u, next_node.name), 0)
+            parent_cond = parent.get(next_node.name, None)
+            if parent_cond and parent_cond == u and capacity - fp > 0:
+                path_flow = _depth_first_search_max_flow_dinic(graph,
+                                                               next_node.name,
+                                                               parent, sink_node,
+                                min(flow, capacity - fp), flow_passed)
+                if path_flow > 0:
+                    fp = flow_passed.get((u, next_node.name), 0)
+                    flow_passed[(u, next_node.name)] = fp + path_flow
+                    fp = flow_passed.get((next_node.name, u), 0)
+                    flow_passed[(next_node.name, u)] = fp - path_flow
+                    return path_flow
+    return 0
+
+
+def _max_flow_dinic_(graph: Graph, source, sink):
+    max_flow = 0
+    flow_passed = {}
+    while True:
+        next_flow, parent = _breadth_first_search_max_flow(graph, source, sink, flow_passed, True)
+        if parent.get(sink, False) is False:
+            break
+
+        while True:
+            path_flow = _depth_first_search_max_flow_dinic(graph, source,
+                                                           parent, sink,
+                                                           float('inf'),
+                                                           flow_passed)
+            if path_flow <= 0:
+                break
+            max_flow += path_flow
+
+    return max_flow
+
+
+def max_flow(graph, source, sink, algorithm='edmonds_karp', **kwargs):
+    raise_if_backend_is_not_python(
+        max_flow, kwargs.get('backend', Backend.PYTHON))
+
+    import pydatastructs.graphs.algorithms as algorithms
+    func = "_max_flow_" + algorithm + "_"
+    if not hasattr(algorithms, func):
+        raise NotImplementedError(
+        f"Currently {algorithm} algorithm isn't implemented for "
+        "performing max flow on graphs.")
+    return getattr(algorithms, func)(graph, source, sink)
